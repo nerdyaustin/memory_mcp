@@ -12,6 +12,7 @@ from memory_mcp.config import get_session_sources
 from memory_mcp.db import get_session_mtime, upsert_session
 from memory_mcp.parsers import PARSERS
 from memory_mcp.parsers.claude_history import ClaudeHistoryParser
+from memory_mcp.parsers.opencode import OpenCodeParser
 
 log = logging.getLogger(__name__)
 
@@ -82,6 +83,42 @@ def _scan_history_file(db: sqlite3.Connection, path: str) -> dict:
         sessions = parser.parse_file(path)
     except Exception:
         log.exception("Failed to parse history file %s", path)
+        stats["errors"] += 1
+        return stats
+
+    for session in sessions:
+        _index_session(db, asdict(session), stats)
+
+    return stats
+
+
+# ---------------------------------------------------------------------------
+# OpenCode DB (one SQLite DB -> many sessions, not parallelizable)
+# ---------------------------------------------------------------------------
+
+def _scan_opencode_db(db: sqlite3.Connection, path: str) -> dict:
+    """Index OpenCode's SQLite database -- one DB, many sessions."""
+    stats = _empty_stats()
+    stats["sources_scanned"] = 1
+    stats["files_found"] = 1
+
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        log.warning("Cannot stat OpenCode DB: %s", path)
+        stats["errors"] += 1
+        return stats
+
+    stored_mtime = get_session_mtime(db, path)
+    if stored_mtime is not None and stored_mtime == mtime:
+        stats["files_skipped"] += 1
+        return stats
+
+    parser = OpenCodeParser()
+    try:
+        sessions = parser.parse_db(path)
+    except Exception:
+        log.exception("Failed to parse OpenCode DB %s", path)
         stats["errors"] += 1
         return stats
 
@@ -182,6 +219,8 @@ def scan_sessions(db: sqlite3.Connection) -> dict:
 
         if source_type == "claude_history":
             part = _scan_history_file(db, source_path)
+        elif source_type == "opencode":
+            part = _scan_opencode_db(db, source_path)
         else:
             part = scan_source(db, source_type, source_path)
         _merge_stats(total, part)

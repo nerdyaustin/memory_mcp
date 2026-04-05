@@ -19,6 +19,7 @@ No database servers. No background processes. No cloud. One SQLite file on your 
 |--------|----------|--------|
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `~/.claude/projects/` | JSONL (streamed content blocks) |
 | Claude Code history | `~/.claude/history.jsonl` | JSONL (survives session file pruning) |
+| [OpenCode](https://opencode.ai) | `~/.local/share/opencode/opencode.db` | SQLite (sessions, messages, parts tables) |
 | [Oh My Pi](https://github.com/can1357/oh-my-pi) | `~/.omp/agent/sessions/` | JSONL (event-per-line) |
 
 Adding a new source requires one parser file and a registry entry. See [Adding a new source](#adding-a-new-session-source).
@@ -126,6 +127,7 @@ memory_mcp/
     claude_code.py # Claude Code JSONL parser (merges streamed assistant blocks)
     claude_history.py # Claude Code history.jsonl parser (one file, many sessions)
     omp.py         # OMP JSONL parser
+    opencode.py    # OpenCode SQLite parser (reads DB directly, read-only)
   tools/
     memory.py      # save_memory, search_memory, list_memories, delete_memory
     sessions.py    # list_sessions, get_session, search_sessions, refresh_sessions

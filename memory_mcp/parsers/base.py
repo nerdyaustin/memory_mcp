@@ -29,7 +29,7 @@ class ParsedSession:
     """A complete session extracted from one JSONL file."""
 
     id: str
-    source: str  # 'claude_code' | 'omp'
+    source: str  # 'claude_code' | 'omp' | 'opencode'
     file_path: str
     file_mtime: float
     title: str | None = None

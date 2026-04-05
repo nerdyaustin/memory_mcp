@@ -32,6 +32,14 @@ def get_session_sources() -> list[dict[str, str]]:
     if omp_sessions.is_dir():
         sources.append({"type": "omp", "path": str(omp_sessions)})
 
+    # OpenCode stores sessions in a SQLite database under XDG data dir.
+    xdg_data = os.environ.get("XDG_DATA_HOME", "")
+    if not xdg_data:
+        xdg_data = str(home / ".local" / "share")
+    opencode_db = Path(xdg_data) / "opencode" / "opencode.db"
+    if opencode_db.is_file():
+        sources.append({"type": "opencode", "path": str(opencode_db)})
+
     # Additional sources from env: "type:path;type:path"
     extra = os.environ.get("MEMORY_MCP_SOURCES", "")
     for entry in extra.split(";"):
