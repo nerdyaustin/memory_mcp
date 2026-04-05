@@ -19,7 +19,7 @@ No database servers. No background processes. No cloud. One SQLite file on your 
 |--------|----------|--------|
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `~/.claude/projects/` | JSONL (streamed content blocks) |
 | Claude Code history | `~/.claude/history.jsonl` | JSONL (survives session file pruning) |
-| [Oh My Pi](https://github.com/anthropics/omp) | `~/.omp/agent/sessions/` | JSONL (event-per-line) |
+| [Oh My Pi](https://github.com/can1357/omp) | `~/.omp/agent/sessions/` | JSONL (event-per-line) |
 
 Adding a new source requires one parser file and a registry entry. See [Adding a new source](#adding-a-new-session-source).
 
