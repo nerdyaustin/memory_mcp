@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "memory": {
+      "command": "python",
+      "args": ["-m", "memory_mcp"],
+      "cwd": "C:/Users/Austin/source/repos/memory_mcp"
+    }
+  }
+}
