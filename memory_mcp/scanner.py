@@ -36,12 +36,12 @@ def _merge_stats(total: dict, part: dict) -> None:
         total[key] += part[key]
 
 
-def _find_jsonl_files(root: str) -> list[str]:
-    """Recursively find all .jsonl files under *root*."""
+def _find_session_files(root: str, extensions: tuple[str, ...] = (".jsonl",)) -> list[str]:
+    """Recursively find session files under *root* matching *extensions*."""
     paths: list[str] = []
     for dirpath, _dirs, filenames in os.walk(root):
         for name in filenames:
-            if name.endswith(".jsonl"):
+            if any(name.endswith(ext) for ext in extensions):
                 paths.append(os.path.join(dirpath, name))
     return paths
 
@@ -158,12 +158,13 @@ def scan_source(db: sqlite3.Connection, source_type: str, source_path: str) -> d
         return stats
 
     parser = PARSERS[source_type]()
-    jsonl_files = _find_jsonl_files(source_path)
-    stats["files_found"] = len(jsonl_files)
+    extensions = getattr(parser, "file_extensions", (".jsonl",))
+    session_files = _find_session_files(source_path, extensions)
+    stats["files_found"] = len(session_files)
 
     # Filter to files that actually need re-indexing (mtime changed).
     to_parse: list[tuple[str, float]] = []
-    for file_path in jsonl_files:
+    for file_path in session_files:
         try:
             mtime = os.path.getmtime(file_path)
         except OSError as exc:

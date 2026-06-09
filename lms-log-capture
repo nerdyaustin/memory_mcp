@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""Captures LM Studio model predictions (API + GUI) to daily JSONL logs.
+
+Usage:
+    lms-log-capture              # foreground
+    lms-log-capture --daemon     # background + detach from terminal (POSIX only)
+
+Runs `lms log stream --json --source model` and writes every prediction
+to ~/.lmstudio/api-logs/YYYY-MM-DD.jsonl.  New file each day.
+
+Each entry from LM Studio is one of:
+    {"timestamp": ms, "data": {"type": "llm.prediction.input",  "input": "...", "modelIdentifier": "..."}}
+    {"timestamp": ms, "data": {"type": "llm.prediction.output", "output": "...", "modelIdentifier": "...", "stats": {...}}}
+
+This script passes them through to the log file unchanged — the
+lmstudio_api parser handles grouping and extraction.
+
+Stop with: kill $(cat ~/.lmstudio/api-logs/capture.pid)
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import signal
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+
+LOG_DIR = Path.home() / ".lmstudio" / "api-logs"
+PID_FILE = LOG_DIR / "capture.pid"
+
+
+def _date_str() -> str:
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+def _find_lms() -> str:
+    """Locate the lms CLI: PATH first, then the default install location."""
+    found = shutil.which("lms")
+    if found:
+        return found
+    candidate = Path.home() / ".lmstudio" / "bin" / (
+        "lms.exe" if os.name == "nt" else "lms"
+    )
+    if candidate.is_file():
+        return str(candidate)
+    sys.exit("lms CLI not found. Install LM Studio and ensure 'lms' is on PATH.")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Capture LM Studio model logs.")
+    parser.add_argument("--daemon", action="store_true", help="Detach from terminal (POSIX only)")
+    args = parser.parse_args()
+
+    # Daemonize if requested.
+    if args.daemon:
+        if not hasattr(os, "fork"):
+            sys.exit("--daemon requires POSIX. On Windows, use: start /b lms-log-capture")
+        pid = os.fork()
+        if pid > 0:
+            print(f"Log capture started (pid {pid})")
+            sys.exit(0)
+        os.setsid()
+
+    lms = _find_lms()
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Write PID for clean shutdown.
+    PID_FILE.write_text(str(os.getpid()))
+
+    def _cleanup(*_):
+        PID_FILE.unlink(missing_ok=True)
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _cleanup)
+    signal.signal(signal.SIGINT, _cleanup)
+
+    current_date = _date_str()
+    log_path = LOG_DIR / f"{current_date}.jsonl"
+    fh = open(log_path, "a", encoding="utf-8")
+
+    proc = None
+    try:
+        proc = subprocess.Popen(
+            [lms, "log", "stream", "--json", "--source", "model"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+
+        for line in proc.stdout:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Rotate file on date change.
+            today = _date_str()
+            if today != current_date:
+                fh.close()
+                current_date = today
+                log_path = LOG_DIR / f"{current_date}.jsonl"
+                fh = open(log_path, "a", encoding="utf-8")
+
+            fh.write(line + "\n")
+            fh.flush()
+
+    except KeyboardInterrupt:
+        pass
+    finally:
+        fh.close()
+        PID_FILE.unlink(missing_ok=True)
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+
+
+if __name__ == "__main__":
+    main()

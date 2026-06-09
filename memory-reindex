@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+"""Re-index the memory MCP database from all session sources.
+
+Intended to run on a schedule (cron/launchd) so the index stays current
+without any session needing to call refresh_sessions manually.
+"""
+
+from __future__ import annotations
+
+from memory_mcp.db import init_db
+from memory_mcp.scanner import scan_sessions
+
+
+def main() -> None:
+    conn = init_db()
+    stats = scan_sessions(conn)
+    conn.close()
+
+    indexed = stats["files_indexed"]
+    if indexed > 0:
+        print(f"Indexed {indexed} new files.")
+
+
+if __name__ == "__main__":
+    main()

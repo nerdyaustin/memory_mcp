@@ -40,6 +40,26 @@ def get_session_sources() -> list[dict[str, str]]:
     if opencode_db.is_file():
         sources.append({"type": "opencode", "path": str(opencode_db)})
 
+    # LM Studio stores conversations as individual JSON files.
+    lmstudio_convos = home / ".lmstudio" / "conversations"
+    if lmstudio_convos.is_dir():
+        sources.append({"type": "lmstudio", "path": str(lmstudio_convos)})
+
+    # OpenAI Codex CLI stores sessions under ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl
+    codex_sessions = home / ".codex" / "sessions"
+    if codex_sessions.is_dir():
+        sources.append({"type": "codex", "path": str(codex_sessions)})
+
+    # Google Gemini CLI stores sessions under ~/.gemini/tmp/<project>/chats/session-*.json
+    gemini_sessions = home / ".gemini" / "tmp"
+    if gemini_sessions.is_dir():
+        sources.append({"type": "gemini", "path": str(gemini_sessions)})
+
+    # LM Studio API call logs captured by lms-log-capture.
+    lmstudio_api_logs = home / ".lmstudio" / "api-logs"
+    if lmstudio_api_logs.is_dir():
+        sources.append({"type": "lmstudio_api", "path": str(lmstudio_api_logs)})
+
     # Additional sources from env: "type:path;type:path"
     extra = os.environ.get("MEMORY_MCP_SOURCES", "")
     for entry in extra.split(";"):

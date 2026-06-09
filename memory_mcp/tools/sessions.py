@@ -5,15 +5,15 @@ from __future__ import annotations
 from mcp.server.fastmcp import FastMCP, Context
 
 from memory_mcp import db
+from memory_mcp.readiness import ensure_semantic_ready
 from memory_mcp.scanner import scan_sessions
 
-# Per-line content cap (matches OMP's DEFAULT_MAX_COLUMN).
-MAX_LINE = 1024
+# Per-field content caps for display.
+MAX_LINE = 4096
 
 
 def _get_db(ctx: Context):
     return ctx.request_context.lifespan_context["db"]
-
 
 def _clip(text: str | None, limit: int = MAX_LINE) -> str:
     """Truncate a string to *limit* chars, appending '...' when clipped."""
@@ -122,22 +122,22 @@ def register_session_tools(mcp: FastMCP) -> None:
             role = (m.get("role") or "").lower()
 
             if role == "user":
-                parts.append(f"{prefix}USER: {_clip(m.get('content'), 500)}")
+                parts.append(f"{prefix}USER: {_clip(m.get('content'), 4096)}")
             elif role == "assistant":
                 thinking = m.get("thinking")
                 if thinking:
-                    parts.append(f"{prefix}THINKING: {_clip(thinking, 200)}")
-                parts.append(f"{prefix}ASSISTANT: {_clip(m.get('content'), 800)}")
+                    parts.append(f"{prefix}THINKING: {_clip(thinking, 2000)}")
+                parts.append(f"{prefix}ASSISTANT: {_clip(m.get('content'), 8000)}")
             elif m.get("tool_name"):
                 name = m["tool_name"]
-                inp = _clip(m.get("tool_input"), 200)
-                out = _clip(m.get("tool_output"), 500)
+                inp = _clip(m.get("tool_input"), 2000)
+                out = _clip(m.get("tool_output"), 4096)
                 parts.append(f"{prefix}{name}: {inp}")
                 if out:
                     parts.append(f"  \u2192 {out}")
             else:
                 parts.append(
-                    f"{prefix}{role.upper()}: {_clip(m.get('content'), 300)}"
+                    f"{prefix}{role.upper()}: {_clip(m.get('content'), 4096)}"
                 )
 
         footer = _page_footer(offset, len(messages), total, "messages")
@@ -174,8 +174,8 @@ def register_session_tools(mcp: FastMCP) -> None:
             name = c.get("tool_name") or "(no name)"
             ts = _ts(c.get("timestamp"))
             prefix = f"[{ts}] " if ts else ""
-            input_snippet = _clip(c.get("tool_input"), 200)
-            output_snippet = _clip(c.get("tool_output"), 500)
+            input_snippet = _clip(c.get("tool_input"), 2000)
+            output_snippet = _clip(c.get("tool_output"), 4096)
 
             if role == "tool_use":
                 lines.append(f"{prefix}CALL {name}: {input_snippet}")
@@ -192,26 +192,40 @@ def register_session_tools(mcp: FastMCP) -> None:
     @mcp.tool(
         description=(
             "Search across all session messages. Use short keywords, not"
-            " natural language phrases — each word is matched independently"
-            " and ranked by relevance."
+            " natural language phrases \u2014 each word is matched independently"
+            " and ranked by relevance. Set semantic=true for meaning-based"
+            " search (finds related concepts even when exact words differ)."
         ),
     )
-    def search_sessions(
+    async def search_sessions(
         query: str,
         limit: int = 10,
         offset: int = 0,
+        semantic: bool = False,
         ctx: Context = None,
     ) -> str:
         conn = _get_db(ctx)
-        results = db.search_messages(conn, query, limit, offset)
+
+        if semantic:
+            try:
+                embedder = await ensure_semantic_ready()
+            except Exception as exc:
+                return f"Semantic search unavailable: {exc}"
+            query_emb = embedder.embed(query)
+            results = db.semantic_search_messages(conn, query_emb, limit, offset)
+            mode = "semantic"
+        else:
+            results = db.search_messages(conn, query, limit, offset)
+            mode = "keyword"
+
         if not results:
             if offset > 0:
-                return f"No more results for '{query}' at offset {offset}."
-            return f"No session messages found matching '{query}'."
+                return f"No more results for '{query}' at offset {offset} ({mode})."
+            return f"No session messages found matching '{query}' ({mode} search)."
 
         start = offset + 1
         end = offset + len(results)
-        lines = [f"Results {start}\u2013{end} for '{query}':\n"]
+        lines = [f"Results {start}\u2013{end} for '{query}' ({mode}):\n"]
         for r in results:
             sid = r.get("session_id", "?")
             title = r.get("session_title") or "Untitled"
@@ -225,9 +239,11 @@ def register_session_tools(mcp: FastMCP) -> None:
             content = r.get("content") or r.get("thinking") or r.get("tool_output") or ""
             tool = r.get("tool_name")
             prefix = f"[{tool}] " if tool else ""
+            dist = r.get("distance")
+            dist_str = f" [dist={dist:.3f}]" if dist is not None else ""
             snippet = _clip(prefix + content, MAX_LINE)
 
-            lines.append(f"[{source}] {title} ({ts_display}) {role}  session_id={sid}")
+            lines.append(f"[{source}] {title} ({ts_display}) {role}{dist_str}  session_id={sid}")
             lines.append(f"  {snippet}")
             lines.append("")
 
