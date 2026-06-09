@@ -31,7 +31,7 @@ async def main():
             tools = await session.list_tools()
             tool_names = sorted(t.name for t in tools.tools)
             print(f"Tools ({len(tool_names)}): {tool_names}")
-            assert len(tool_names) == 8, f"Expected 8 tools, got {len(tool_names)}"
+            assert len(tool_names) == 9, f"Expected 9 tools, got {len(tool_names)}"
 
             # --- save_memory ---
             r = await session.call_tool("save_memory", {
@@ -99,6 +99,12 @@ async def main():
             text = r.content[0].text
             print(f"get_session (missing): {text}")
             assert "not found" in text.lower()
+
+            # --- get_tool_calls (empty DB: graceful no-results message) ---
+            r = await session.call_tool("get_tool_calls", {"session_id": "nonexistent-id"})
+            text = r.content[0].text
+            print(f"get_tool_calls (missing): {text}")
+            assert "No tool calls found" in text
 
             # --- refresh_sessions ---
             r = await session.call_tool("refresh_sessions", {})

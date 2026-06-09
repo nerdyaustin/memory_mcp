@@ -364,6 +364,42 @@ def get_session_messages(
     return dict(header), [dict(r) for r in rows], total
 
 
+def get_tool_calls(
+    db: sqlite3.Connection,
+    session_id: str,
+    tool_name: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict], int]:
+    """Return (tool_calls_page, total_count) for a session.
+
+    When tool_name is None, returns all tool_use and tool_result messages.
+    Otherwise filters to the specified tool name (case-insensitive prefix match).
+    """
+    where_clauses = ["session_id = ?", "role IN ('tool_use', 'tool_result')"]
+    params: list = [session_id]
+
+    if tool_name:
+        where_clauses.append("tool_name LIKE ?")
+        params.append(f"{tool_name}%")
+
+    where = " AND ".join(where_clauses)
+    total = db.execute(
+        f"SELECT count(*) FROM messages WHERE {where}",
+        params,
+    ).fetchone()[0]
+
+    params.extend([limit, offset])
+    rows = db.execute(
+        f"""SELECT id, session_id, parent_id, role, content, thinking,
+               tool_name, tool_input, tool_output, timestamp, model, cost_usd
+               FROM messages WHERE {where}
+               ORDER BY rowid LIMIT ? OFFSET ?""",
+        params,
+    ).fetchall()
+    return [dict(r) for r in rows], total
+
+
 def search_messages(
     db: sqlite3.Connection,
     query: str,

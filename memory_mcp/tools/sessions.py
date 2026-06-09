@@ -147,6 +147,50 @@ def register_session_tools(mcp: FastMCP) -> None:
 
     @mcp.tool(
         description=(
+            "Get tool calls and results for a specific session. "
+            "Filter by tool name for targeted queries. "
+            "Each entry shows role, tool name, input, and output."
+        ),
+    )
+    def get_tool_calls(
+        session_id: str,
+        tool_name: str = "",
+        limit: int = 50,
+        offset: int = 0,
+        ctx: Context = None,
+    ) -> str:
+        conn = _get_db(ctx)
+        name_filter = tool_name or None
+        calls, total = db.get_tool_calls(conn, session_id, name_filter, limit, offset)
+        if not calls:
+            return f"No tool calls found for session '{session_id}'."
+
+        end = offset + len(calls)
+        lines = [
+            f"Tool calls for session {session_id} ({offset + 1}–{end} of {total}):\n"
+        ]
+        for c in calls:
+            role = c.get("role", "")
+            name = c.get("tool_name") or "(no name)"
+            ts = _ts(c.get("timestamp"))
+            prefix = f"[{ts}] " if ts else ""
+            input_snippet = _clip(c.get("tool_input"), 200)
+            output_snippet = _clip(c.get("tool_output"), 500)
+
+            if role == "tool_use":
+                lines.append(f"{prefix}CALL {name}: {input_snippet}")
+            elif role == "tool_result":
+                lines.append(f"{prefix}RESULT {name}: {output_snippet}")
+            else:
+                lines.append(f"{prefix}{role.upper()} {name}")
+
+        footer = _page_footer(offset, len(calls), total, "tool calls")
+        if footer:
+            lines.append(footer)
+        return "\n".join(lines)
+
+    @mcp.tool(
+        description=(
             "Search across all session messages. Use short keywords, not"
             " natural language phrases — each word is matched independently"
             " and ranked by relevance."
