@@ -5,10 +5,30 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 
 from .base import ParsedMessage, ParsedSession
 
 log = logging.getLogger(__name__)
+_SESSION_DIR_RE = re.compile(
+    r"_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
+    re.IGNORECASE,
+)
+
+
+def _fallback_session_id(path: str) -> str:
+    """Derive a stable identity for OMP logs without a session header.
+
+    Nested agent logs live below a directory named
+    ``<timestamp>_<parent-session-id>`` and use a human-readable filename that
+    may be reused in other sessions. Scope that filename to its parent.
+    """
+    stem = os.path.splitext(os.path.basename(path))[0]
+    parent_dir = os.path.basename(os.path.dirname(path))
+    match = _SESSION_DIR_RE.search(parent_dir)
+    if match:
+        return f"{match.group(1)}:agent:{stem}"
+    return stem
 
 
 def _extract_text(content: list[dict] | str | None) -> str | None:
@@ -85,9 +105,10 @@ class OmpParser:
             log.warning("Cannot read file: %s", path)
             return None
 
-        # Fallback session id from filename if no session header found.
+        # Main logs have a session header. Nested agent logs do not, so derive
+        # an identity scoped to the parent session directory.
         if session_id is None:
-            session_id = os.path.splitext(os.path.basename(path))[0]
+            session_id = _fallback_session_id(path)
 
         return ParsedSession(
             id=session_id,

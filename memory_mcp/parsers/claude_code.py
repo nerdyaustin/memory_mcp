@@ -38,18 +38,25 @@ class ClaudeCodeParser:
         if first_meaningful.get("type") == "summary":
             return None
 
-        # Extract session metadata from first user/assistant entry.
-        session_id: str | None = None
+        # Main-session entries carry only sessionId. Subagent entries carry a
+        # unique agentId as well as the inherited parent sessionId; using the
+        # latter alone makes every sibling agent overwrite the parent session.
+        parent_session_id: str | None = None
+        agent_id: str | None = None
         cwd: str | None = None
         for e in entries:
             if e.get("type") in ("user", "assistant"):
-                session_id = session_id or e.get("sessionId")
+                parent_session_id = parent_session_id or e.get("sessionId")
+                agent_id = agent_id or e.get("agentId")
                 cwd = cwd or e.get("cwd")
-                if session_id and cwd:
-                    break
 
-        if session_id is None:
-            # Fallback: derive from filename.
+        if agent_id:
+            parent = parent_session_id or "unknown"
+            session_id = f"{parent}:agent:{agent_id}"
+        elif parent_session_id:
+            session_id = parent_session_id
+        else:
+            # Fallback for older logs without identity metadata.
             session_id = os.path.splitext(os.path.basename(path))[0]
 
         messages: list[ParsedMessage] = []

@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 
 from memory_mcp.config import get_session_sources
-from memory_mcp.db import get_session_mtime, upsert_session
+from memory_mcp.db import get_session_mtime, record_indexed_file, upsert_session
 from memory_mcp.parsers import PARSERS
 from memory_mcp.parsers.claude_history import ClaudeHistoryParser
 from memory_mcp.parsers.opencode import OpenCodeParser
@@ -46,21 +46,26 @@ def _find_session_files(root: str, extensions: tuple[str, ...] = (".jsonl",)) ->
     return paths
 
 
-def _index_session(db: sqlite3.Connection, session_dict: dict, stats: dict) -> None:
-    """Upsert a single parsed session into the DB, updating stats."""
+def _index_session(
+    db: sqlite3.Connection, session_dict: dict, stats: dict, machine_id: str,
+) -> bool:
+    """Upsert one parsed session and report whether it succeeded."""
     try:
-        upsert_session(db, session_dict)
+        upsert_session(db, session_dict, machine_id)
         stats["files_indexed"] += 1
+        return True
     except Exception:
+        db.rollback()
         log.exception("Failed to index session %s", session_dict.get("id", "?"))
         stats["errors"] += 1
+        return False
 
 
 # ---------------------------------------------------------------------------
 # History file (one file -> many sessions, not parallelizable)
-# ---------------------------------------------------------------------------
-
-def _scan_history_file(db: sqlite3.Connection, path: str) -> dict:
+def _scan_history_file(
+    db: sqlite3.Connection, path: str, machine_id: str,
+) -> dict:
     """Index ~/.claude/history.jsonl -- a single file containing many sessions."""
     stats = _empty_stats()
     stats["sources_scanned"] = 1
@@ -86,8 +91,13 @@ def _scan_history_file(db: sqlite3.Connection, path: str) -> dict:
         stats["errors"] += 1
         return stats
 
+    succeeded = True
     for session in sessions:
-        _index_session(db, asdict(session), stats)
+        succeeded = _index_session(
+            db, asdict(session), stats, machine_id,
+        ) and succeeded
+    if succeeded:
+        record_indexed_file(db, path, mtime, "claude_history")
 
     return stats
 
@@ -95,8 +105,9 @@ def _scan_history_file(db: sqlite3.Connection, path: str) -> dict:
 # ---------------------------------------------------------------------------
 # OpenCode DB (one SQLite DB -> many sessions, not parallelizable)
 # ---------------------------------------------------------------------------
-
-def _scan_opencode_db(db: sqlite3.Connection, path: str) -> dict:
+def _scan_opencode_db(
+    db: sqlite3.Connection, path: str, machine_id: str,
+) -> dict:
     """Index OpenCode's SQLite database -- one DB, many sessions."""
     stats = _empty_stats()
     stats["sources_scanned"] = 1
@@ -122,8 +133,13 @@ def _scan_opencode_db(db: sqlite3.Connection, path: str) -> dict:
         stats["errors"] += 1
         return stats
 
+    succeeded = True
     for session in sessions:
-        _index_session(db, asdict(session), stats)
+        succeeded = _index_session(
+            db, asdict(session), stats, machine_id,
+        ) and succeeded
+    if succeeded:
+        record_indexed_file(db, path, mtime, "opencode")
 
     return stats
 
@@ -144,7 +160,9 @@ def _parse_one(parser, file_path: str) -> dict | None:
     return asdict(session)
 
 
-def scan_source(db: sqlite3.Connection, source_type: str, source_path: str) -> dict:
+def scan_source(
+    db: sqlite3.Connection, source_type: str, source_path: str, machine_id: str,
+) -> dict:
     """Scan a single source directory and index new/changed session files."""
     stats = _empty_stats()
     stats["sources_scanned"] = 1
@@ -184,11 +202,11 @@ def scan_source(db: sqlite3.Connection, source_type: str, source_path: str) -> d
     # Parse files in parallel, write to DB on main thread.
     with ThreadPoolExecutor(max_workers=_PARSE_WORKERS) as pool:
         futures = {
-            pool.submit(_parse_one, parser, fp): fp
-            for fp, _mtime in to_parse
+            pool.submit(_parse_one, parser, fp): (fp, mtime)
+            for fp, mtime in to_parse
         }
         for future in as_completed(futures):
-            file_path = futures[future]
+            file_path, file_mtime = futures[future]
             try:
                 session_dict = future.result()
             except Exception:
@@ -197,10 +215,16 @@ def scan_source(db: sqlite3.Connection, source_type: str, source_path: str) -> d
                 continue
 
             if session_dict is None:
+                record_indexed_file(
+                    db, file_path, file_mtime, source_type,
+                )
                 stats["files_skipped"] += 1
                 continue
 
-            _index_session(db, session_dict, stats)
+            if _index_session(db, session_dict, stats, machine_id):
+                record_indexed_file(
+                    db, file_path, file_mtime, source_type,
+                )
 
     return stats
 
@@ -209,7 +233,7 @@ def scan_source(db: sqlite3.Connection, source_type: str, source_path: str) -> d
 # Top-level scan
 # ---------------------------------------------------------------------------
 
-def scan_sessions(db: sqlite3.Connection) -> dict:
+def scan_sessions(db: sqlite3.Connection, machine_id: str = "") -> dict:
     """Walk all configured session sources and index new/changed files."""
     total = _empty_stats()
 
@@ -219,11 +243,11 @@ def scan_sessions(db: sqlite3.Connection) -> dict:
         log.info("Scanning %s source: %s", source_type, source_path)
 
         if source_type == "claude_history":
-            part = _scan_history_file(db, source_path)
+            part = _scan_history_file(db, source_path, machine_id)
         elif source_type == "opencode":
-            part = _scan_opencode_db(db, source_path)
+            part = _scan_opencode_db(db, source_path, machine_id)
         else:
-            part = scan_source(db, source_type, source_path)
+            part = scan_source(db, source_type, source_path, machine_id)
         _merge_stats(total, part)
 
     log.info(

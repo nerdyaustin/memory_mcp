@@ -77,5 +77,8 @@ class Embedder:
         return serialize_f32(vec)
 
     def embed_batch(self, texts: list[str]) -> list[bytes]:
-        """Embed multiple texts and return list of serialized float32 bytes."""
-        return [serialize_f32(v) for v in self._model.embed(texts)]
+        """Embed a bounded batch and return serialized float32 vectors."""
+        return [
+            serialize_f32(v)
+            for v in self._model.embed(texts, batch_size=32)
+        ]

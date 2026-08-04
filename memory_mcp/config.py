@@ -81,3 +81,29 @@ def get_db_path() -> Path:
     db_dir = Path.home() / ".memory_mcp"
     db_dir.mkdir(parents=True, exist_ok=True)
     return db_dir / "memory.db"
+
+def get_sync_api_url() -> str | None:
+    """Return the sync server URL if configured, or None (local-only mode)."""
+    return os.environ.get("MEMORY_MCP_SYNC_URL") or None
+
+
+def get_sync_api_key() -> str | None:
+    """Return the sync server API key if configured."""
+    return os.environ.get("MEMORY_MCP_SYNC_KEY") or None
+
+
+def is_sync_enabled() -> bool:
+    """True when both sync URL and key are configured."""
+    return bool(get_sync_api_url() and get_sync_api_key())
+
+
+def get_sync_config() -> dict:
+    """Return the full sync configuration as a dict.
+
+    Returns an empty dict when sync is not configured.
+    """
+    url = get_sync_api_url()
+    key = get_sync_api_key()
+    if not (url and key):
+        return {}
+    return {"api_url": url.rstrip("/"), "api_key": key}
