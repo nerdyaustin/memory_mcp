@@ -31,7 +31,7 @@ async def main():
             tools = await session.list_tools()
             tool_names = sorted(t.name for t in tools.tools)
             print(f"Tools ({len(tool_names)}): {tool_names}")
-            assert len(tool_names) == 9, f"Expected 9 tools, got {len(tool_names)}"
+            assert len(tool_names) == 10, f"Expected 10 tools, got {len(tool_names)}"
 
             # --- save_memory ---
             r = await session.call_tool("save_memory", {

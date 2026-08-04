@@ -132,7 +132,7 @@ def main() -> int:
         print(f"Popen -> tools/list: {elapsed*1000:.1f} ms")
         print(f"Tools ({len(names)}): {names}")
 
-        assert len(names) == 9, f"Expected 9 tools, got {len(names)}: {names}"
+        assert len(names) == 10, f"Expected 10 tools, got {len(names)}: {names}"
         assert elapsed < STARTUP_THRESHOLD_SECONDS, (
             f"Startup too slow: {elapsed*1000:.1f} ms exceeds "
             f"{STARTUP_THRESHOLD_SECONDS*1000:.0f} ms threshold. "
