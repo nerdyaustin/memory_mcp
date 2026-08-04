@@ -1,6 +1,6 @@
 [project]
 name = "memory-mcp"
-version = "0.2.0"
+version = "0.5.0"
 description = "MCP server for persistent AI session memory and cross-session search"
 requires-python = ">=3.11"
 dependencies = [

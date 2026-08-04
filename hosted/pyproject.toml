@@ -1,0 +1,17 @@
+[project]
+name = "memory-mcp-hosted"
+version = "0.1.0"
+description = "Hosted sync server for memory_mcp — aggregates sessions and memories across machines"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "sqlalchemy[asyncio]>=2.0.30",
+    "asyncpg>=0.29.0",
+    "pgvector>=0.3.0",
+    "alembic>=1.13.0",
+    "pydantic>=2.0",
+]
+
+[project.scripts]
+memory-mcp-hosted = "hosted.server:main"
