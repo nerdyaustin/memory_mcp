@@ -24,3 +24,7 @@ Thumbs.db
 # Database (local dev)
 *.db
 *.sqlite3
+
+# Machine-specific MCP client config
+.mcp.json
+hosted/api_key.txt
