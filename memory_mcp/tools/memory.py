@@ -10,6 +10,10 @@ def _get_db(ctx: Context):
     return ctx.request_context.lifespan_context["db"]
 
 
+def _get_machine_id(ctx: Context) -> str:
+    return ctx.request_context.lifespan_context.get("machine_id", "")
+
+
 def _parse_tags(tags: str) -> list[str] | None:
     """Split comma-separated tags string, strip whitespace, drop empties. None if no tags."""
     parsed = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
@@ -52,7 +56,8 @@ def register_memory_tools(mcp: FastMCP):
                 pass  # Non-fatal; memory is saved without a vector.
 
         memory_id = db.save_memory(
-            conn, content, tags_list, context_str, embedding=embedding,
+            conn, content, tags_list, context_str,
+            embedding=embedding, machine_id=_get_machine_id(ctx),
         )
         return f"Saved memory #{memory_id}."
 

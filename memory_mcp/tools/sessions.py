@@ -15,6 +15,10 @@ MAX_LINE = 4096
 def _get_db(ctx: Context):
     return ctx.request_context.lifespan_context["db"]
 
+
+def _get_machine_id(ctx: Context) -> str:
+    return ctx.request_context.lifespan_context.get("machine_id", "")
+
 def _clip(text: str | None, limit: int = MAX_LINE) -> str:
     """Truncate a string to *limit* chars, appending '...' when clipped."""
     if not text:
@@ -260,7 +264,7 @@ def register_session_tools(mcp: FastMCP) -> None:
     )
     def refresh_sessions(ctx: Context = None) -> str:
         conn = _get_db(ctx)
-        stats = scan_sessions(conn)
+        stats = scan_sessions(conn, _get_machine_id(ctx))
         return (
             f"Scanned {stats['sources_scanned']} sources, "
             f"found {stats['files_found']} files, "
